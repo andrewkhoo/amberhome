@@ -1,0 +1,570 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Amber usage</title>
+<style>
+:root{--bg:#ffffff;--fg:#000000;--mut:#4a4a4a;--grid:#8a8a8a;--gen:#b43a00;--cl:#0044cc;--price:#7a14c2;--zero:#262626;--feed:#0a8a4a}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){--bg:#000000;--fg:#ffffff;--mut:#d6d6d6;--grid:#6e6e6e;--gen:#ff8c3a;--cl:#4da3ff;--price:#d38bff;--zero:#d6d6d6;--feed:#5fd38d}}
+:root[data-theme="dark"]{--bg:#000000;--fg:#ffffff;--mut:#d6d6d6;--grid:#6e6e6e;--gen:#ff8c3a;--cl:#4da3ff;--price:#d38bff;--zero:#d6d6d6;--feed:#5fd38d}
+/* Fluid layout: charts are drawn at the current window width and height, and redrawn on resize. */
+body{margin:0;background:var(--bg);color:var(--fg);font:13px -apple-system,system-ui,sans-serif;padding:10px;box-sizing:border-box;overflow-x:hidden}
+[hidden]{display:none!important}
+h1{font-size:16px;margin:0 0 6px}
+.modes{display:flex;margin-bottom:8px}
+.modes button{border-radius:0}
+.modes button:first-child{border-radius:6px 0 0 6px}
+.modes button:last-child{border-radius:0 6px 6px 0}
+.modes button.on{background:var(--grid);color:var(--bg)}
+.toggles{display:flex;gap:12px;flex-wrap:wrap;align-items:center;margin-bottom:8px}
+.toggles .modes{margin-bottom:0}
+form{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:8px}
+input[type=date],select{font:inherit;padding:4px 6px;border:1px solid var(--grid);border-radius:6px;background:var(--bg);color:var(--fg)}
+button{font:inherit;padding:4px 12px;border:1px solid var(--grid);border-radius:6px;background:var(--bg);color:var(--fg);cursor:pointer}
+button:disabled{opacity:.5;cursor:default}
+.cards{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:6px}
+.card{border:1px solid var(--grid);border-radius:8px;padding:4px 10px;min-width:150px;flex:1}
+.card b{display:block;font-size:16px;font-variant-numeric:tabular-nums}
+.card span{color:var(--mut);font-size:11px}
+svg{width:100%;height:auto;display:block}
+.grid{stroke:var(--grid);stroke-width:1}
+.zero{stroke:var(--zero);stroke-width:1}
+.lab{fill:var(--mut);font-size:11px}
+.panel-t{fill:var(--fg);font-size:13px;font-weight:600}
+.bar-gen{fill:var(--gen)} .bar-cl{fill:var(--cl)} .bar-fi{fill:var(--feed);fill-opacity:.75}
+.price{fill:none;stroke:var(--price);stroke-width:2}
+.price-fi{fill:none;stroke:var(--feed);stroke-width:2;stroke-dasharray:6 4}
+.legend{display:flex;gap:14px;flex-wrap:wrap;margin:4px 0 0;color:var(--mut);font-size:12px;align-items:center}
+.sw{display:inline-block;width:12px;height:12px;border-radius:2px;margin-right:6px;vertical-align:-2px}
+.ramp{display:inline-block;width:160px;height:8px;border-radius:4px;background:linear-gradient(to right,hsl(220 70% 50%),hsl(20 70% 50%));vertical-align:middle}
+.msg{color:var(--mut);margin:12px 0}
+.err{color:#c00000}
+.note{color:var(--mut);font-size:11px;margin-top:4px}
+.section{color:var(--fg);font-weight:600;font-size:12px;margin:8px 0 0}
+</style></head><body>
+<h1>Amber usage</h1>
+<div class="toggles">
+  <label for="site">Site</label>
+  <select id="site">__OPTIONS__</select>
+</div>
+<div class="modes">
+  <button type="button" id="m1" class="on">Single day</button>
+  <button type="button" id="m2">Date range</button>
+</div>
+<form id="f1">
+  <label for="d">Date</label>
+  <input type="date" id="d" required>
+  <button type="submit" id="go1">Show</button>
+</form>
+<form id="f2" hidden>
+  <label for="s">From</label>
+  <input type="date" id="s" required>
+  <label for="e">To</label>
+  <input type="date" id="e" required>
+  <button type="submit" id="go2">Show range</button>
+  <span class="note">Up to 31 days.</span>
+</form>
+<div id="out"><div class="msg">Pick a date and press Show.</div></div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const NS = "http://www.w3.org/2000/svg";
+const iso = (d) => new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+const DAY_SLOTS = 288; // 5-minute intervals per day
+const MAX_RANGE = 31;
+
+function el(name, attrs, text) {
+  const e = document.createElementNS(NS, name);
+  for (const k in attrs) e.setAttribute(k, attrs[k]);
+  if (text != null) e.textContent = text;
+  return e;
+}
+
+// Chart width follows the page's content width, so text keeps its normal size at any window width.
+const viewWidth = () => Math.max(280, Math.floor($("out").clientWidth));
+
+// Chart height follows the window height, within limits. `share` is this chart's part of the space left below the controls.
+const fitHeight = (share) => {
+  const avail = Math.max(360, window.innerHeight - 320);
+  return Math.round(Math.min(Math.max(avail * share, 110), 420));
+};
+
+// NEM wall-clock label "HH:MM" straight from the nemTime string (already Sydney time).
+const hhmm = (s) => s.slice(11, 16);
+
+// Index of a 5-minute interval within its day: 00:05 -> 0, 00:00 (end of day) -> 287.
+function slotOf(nemTime) {
+  const [h, m] = hhmm(nemTime).split(":").map(Number);
+  return ((h * 60 + m) / 5 - 1 + DAY_SLOTS) % DAY_SLOTS;
+}
+
+function sortByStart(rows) {
+  return rows.slice().sort((a, b) => a.startTime.localeCompare(b.startTime));
+}
+
+// ---------- Single day ----------
+
+function summarise(rows) {
+  const gen = rows.filter(r => r.channelType === "general");
+  const cl = rows.filter(r => r.channelType === "controlledLoad");
+  const feed = rows.filter(r => r.channelType === "feedIn");
+  const sum = (xs, f) => xs.reduce((a, x) => a + (x[f] || 0), 0);
+  return {
+    genKwh: sum(gen, "kwh"),
+    genCost: sum(gen, "cost"),
+    clKwh: sum(cl, "kwh"),
+    clCost: sum(cl, "cost"),
+    feedKwh: sum(feed, "kwh"),
+    feedCost: sum(feed, "cost"),
+    cost: sum(rows, "cost"),
+    avgPrice: gen.length ? sum(gen, "perKwh") / gen.length : 0,
+  };
+}
+
+function chart(rows) {
+  const W = viewWidth(), L = 50, R = 12, gap = 30;
+  const H1 = fitHeight(0.5), H2 = fitHeight(0.4), T1 = 24, T2 = 24;
+  const H = T1 + H1 + gap + T2 + H2 + 28;
+
+  const gen = sortByStart(rows.filter(r => r.channelType === "general"));
+  const cl = sortByStart(rows.filter(r => r.channelType === "controlledLoad"));
+  const fi = sortByStart(rows.filter(r => r.channelType === "feedIn"));
+  const n = gen.length;
+  const pw = W - L - R;
+  const slot = pw / n;
+  const x = (i) => L + i * slot;
+
+  const svg = el("svg", { viewBox: `0 0 ${W} ${H}`, role: "img", "aria-label": "Amber usage and price chart" });
+
+  // Panel 1: stacked kWh per interval, with feed-in kWh hanging below zero
+  const genAt = new Map(gen.map((r, i) => [r.startTime, i]));
+  const maxKwh = Math.max(0.0001, ...gen.map((r, i) => (r.kwh || 0) + ((cl[i] && cl[i].kwh) || 0)));
+  const minKwh = Math.min(0, ...fi.map(r => -(r.kwh || 0)));
+  const y1 = (v) => T1 + H1 - ((v - minKwh) / (maxKwh - minKwh)) * H1;
+  const base1 = y1(0);
+  svg.appendChild(el("text", { class: "panel-t", x: L, y: T1 - 10 }, "Usage (kWh per 5 min)"));
+  for (let i = 0; i <= 4; i++) {
+    const v = minKwh + (maxKwh - minKwh) * i / 4, y = y1(v);
+    svg.appendChild(el("line", { class: "grid", x1: L, x2: W - R, y1: y, y2: y }));
+    svg.appendChild(el("text", { class: "lab", x: L - 8, y: y + 4, "text-anchor": "end" }, v.toFixed(2)));
+  }
+  if (minKwh < 0) svg.appendChild(el("line", { class: "zero", x1: L, x2: W - R, y1: base1, y2: base1 }));
+  gen.forEach((r, i) => {
+    const c = cl[i] ? cl[i].kwh || 0 : 0;
+    const g = r.kwh || 0;
+    const bw = Math.max(1, slot * 0.8), bx = x(i) + (slot - bw) / 2;
+    if (g > 0) svg.appendChild(el("rect", { class: "bar-gen", x: bx, y: y1(g), width: bw, height: base1 - y1(g) }));
+    if (c > 0) svg.appendChild(el("rect", { class: "bar-cl", x: bx, y: y1(g + c), width: bw, height: y1(g) - y1(g + c) }));
+  });
+  fi.forEach((r) => {
+    const i = genAt.get(r.startTime), k = r.kwh || 0;
+    if (i === undefined || k <= 0) return;
+    const bw = Math.max(1, slot * 0.8), bx = x(i) + (slot - bw) / 2;
+    svg.appendChild(el("rect", { class: "bar-fi", x: bx, y: base1, width: bw, height: y1(-k) - base1 }));
+  });
+
+  // Panel 2: general price per kWh
+  const T2y = T1 + H1 + gap;
+  const prices = gen.map(r => r.perKwh || 0);
+  const fiPrices = fi.map(r => r.perKwh || 0);
+  const pmin = Math.min(0, ...prices, ...fiPrices), pmax = Math.max(1, ...prices, ...fiPrices) * 1.1;
+  const y2 = (v) => T2y + T2 + H2 - ((v - pmin) / (pmax - pmin)) * H2;
+  svg.appendChild(el("text", { class: "panel-t", x: L, y: T2y + 4 }, "General price (c/kWh)"));
+  for (let i = 0; i <= 4; i++) {
+    const v = pmin + (pmax - pmin) * i / 4, y = y2(v);
+    svg.appendChild(el("line", { class: "grid", x1: L, x2: W - R, y1: y, y2: y }));
+    svg.appendChild(el("text", { class: "lab", x: L - 8, y: y + 4, "text-anchor": "end" }, v.toFixed(0)));
+  }
+  svg.appendChild(el("line", { class: "zero", x1: L, x2: W - R, y1: y2(0), y2: y2(0) }));
+  const d = gen.map((r, i) => {
+    const cx = x(i) + slot / 2;
+    return `${i ? "L" : "M"}${cx.toFixed(1)},${y2(r.perKwh || 0).toFixed(1)}`;
+  }).join(" ");
+  svg.appendChild(el("path", { class: "price", d }));
+
+  // Feed-in price, placed at the same x positions as the general readings with the same start time.
+  const fiD = fi.filter(r => genAt.has(r.startTime)).map((r, k) => {
+    const cx = x(genAt.get(r.startTime)) + slot / 2;
+    return `${k ? "L" : "M"}${cx.toFixed(1)},${y2(r.perKwh || 0).toFixed(1)}`;
+  }).join(" ");
+  if (fiD) svg.appendChild(el("path", { class: "price-fi", d: fiD }));
+
+  // Shared hour labels under the lower panel (one per whole hour)
+  const bottom = T2y + T2 + H2;
+  gen.forEach((r, i) => {
+    const t = hhmm(r.nemTime);
+    if (t.endsWith(":00") && Number(t.slice(0, 2)) % 3 === 0) {
+      const cx = x(i) + slot / 2;
+      svg.appendChild(el("line", { class: "grid", x1: cx, x2: cx, y1: T1, y2: bottom }));
+      // Keep edge labels inside the SVG so the last hour is not clipped.
+      const anchor = cx > W - 40 ? "end" : "middle";
+      svg.appendChild(el("text", { class: "lab", x: cx, y: bottom + 18, "text-anchor": anchor }, t));
+    }
+  });
+  return svg;
+}
+
+// ---------- Date range: raw readings only ----------
+
+// Keep every reading as it came from the API, grouped by day and channel. Nothing is summed or averaged.
+function groupRawByDay(rows) {
+  const days = new Map();
+  for (const r of rows) {
+    let day = days.get(r.date);
+    if (!day) {
+      day = { date: r.date, general: [], controlledLoad: [], feedIn: [] };
+      days.set(r.date, day);
+    }
+    const list = r.channelType === "general" ? day.general : r.channelType === "feedIn" ? day.feedIn : day.controlledLoad;
+    list.push({ slot: slotOf(r.nemTime), kwh: r.kwh || 0, perKwh: r.perKwh || 0 });
+  }
+  return [...days.values()].sort((a, b) => a.date.localeCompare(b.date));
+}
+
+// 30-minute view: six 5-minute readings make one bar. Usage is the sum of kWh in the window.
+// Price is the plain (unweighted) average of the readings' c/kWh in the window.
+const SLOTS_PER_30 = 6;
+function binDay(day) {
+  const bin = (list) => {
+    const acc = new Map();
+    for (const p of list) {
+      const b = Math.floor(p.slot / SLOTS_PER_30);
+      let a = acc.get(b);
+      if (!a) { a = { slot: b, kwh: 0, priceSum: 0, count: 0 }; acc.set(b, a); }
+      a.kwh += p.kwh;
+      a.priceSum += p.perKwh;
+      a.count += 1;
+    }
+    return [...acc.values()]
+      .map(a => ({ slot: a.slot, kwh: a.kwh, perKwh: a.priceSum / a.count }))
+      .sort((a, b) => a.slot - b.slot);
+  };
+  return { date: day.date, general: bin(day.general), controlledLoad: bin(day.controlledLoad), feedIn: bin(day.feedIn) };
+}
+
+// One bar per reading, placed at its time of day. Each day has its own colour, from blue (earliest)
+// to orange (latest), and the days are overlaid on the same axis.
+// General usage = filled bars. Controlled load = outlined bars.
+// Line mode: one line per day and channel through the points, instead of bars.
+// General = solid, controlled load = dashed. Same colours and axes as the bars.
+function rawLines(svg, { days, key, showGen, showCL, showFI, x, y, bw }) {
+  const n = days.length;
+  days.forEach((day, i) => {
+    const hue = n === 1 ? 220 : 220 - 200 * (i / (n - 1));
+    const colour = `hsl(${hue} 70% 50%)`;
+    for (const [series, enabled, dashed] of [[day.general, showGen, false], [day.controlledLoad, showCL, true], [day.feedIn, showFI, "dot"]]) {
+      if (!enabled || series.length === 0) continue;
+      const pts = [...series].sort((a, b) => a.slot - b.slot);
+      const d = pts.map((p, k) => `${k ? "L" : "M"}${(x(p.slot) + bw / 2).toFixed(1)},${y(p[key]).toFixed(1)}`).join(" ");
+      const attrs = { d, fill: "none", stroke: colour, "stroke-width": 1.5 };
+      if (dashed === "dot") attrs["stroke-dasharray"] = "2 3";
+      else if (dashed) attrs["stroke-dasharray"] = "7 4";
+      svg.appendChild(el("path", attrs));
+    }
+  });
+}
+
+function rawBarChart({ days, key, height, decimals, ariaLabel, showGen, showCL, showFI = false, bins, kind = "bar" }) {
+  const W = viewWidth(), L = 50, R = 12, T = 18, B = 22;
+  const H = T + height + B + 16;
+  const pw = W - L - R;
+  const sw = pw / bins;                  // width of one bar slot (5 or 30 minutes)
+  const bw = Math.max(1, sw * 0.8);       // bar width, leaving a gap between bars
+  const x = (slot) => L + slot * sw + (sw - bw) / 2;
+
+  const svg = el("svg", { viewBox: `0 0 ${W} ${H}`, role: "img", "aria-label": ariaLabel });
+  // Feed-in prices are negative in the API, so line charts scale down to the lowest value as well as up to the highest.
+  const visible = (d) => [...(showGen ? d.general : []), ...(showCL ? d.controlledLoad : []), ...(kind === "line" && showFI ? d.feedIn : [])];
+  const vals = days.flatMap(d => visible(d).map(p => p[key]));
+  // Feed-in kWh is drawn below zero in usage charts, so the scale includes its negated values.
+  const feedVals = kind === "bar" && showFI ? days.flatMap(d => d.feedIn.map(p => -p[key])) : [];
+  const minV = Math.min(0, ...vals, ...feedVals);
+  const maxV = Math.max(0.0001, ...vals) * 1.1;
+  const y = (v) => T + height - ((v - minV) / (maxV - minV)) * height;
+  const base = y(0);
+
+  for (let i = 0; i <= 4; i++) {
+    const v = minV + (maxV - minV) * i / 4, yy = y(v);
+    svg.appendChild(el("line", { class: "grid", x1: L, x2: W - R, y1: yy, y2: yy }));
+    svg.appendChild(el("text", { class: "lab", x: L - 8, y: yy + 4, "text-anchor": "end" }, v.toFixed(decimals)));
+  }
+  if (minV < 0) svg.appendChild(el("line", { class: "zero", x1: L, x2: W - R, y1: base, y2: base }));
+  for (let h = 0; h < 24; h += 3) {
+    const xx = L + (h / 24) * pw;
+    svg.appendChild(el("line", { class: "grid", x1: xx, x2: xx, y1: T, y2: T + height }));
+    svg.appendChild(el("text", { class: "lab", x: xx, y: T + height + 16, "text-anchor": h === 0 ? "start" : "middle" }, `${String(h).padStart(2, "0")}:00`));
+  }
+
+  if (kind === "line") {
+    rawLines(svg, { days, key, showGen, showCL, showFI, x, y, bw });
+    return svg;
+  }
+
+  const n = days.length;
+  days.forEach((day, i) => {
+    const hue = n === 1 ? 220 : 220 - 200 * (i / (n - 1));
+    const colour = `hsl(${hue} 70% 50%)`;
+    for (const p of showGen ? day.general : []) {
+      const top = y(p[key]);
+      svg.appendChild(el("rect", { x: x(p.slot).toFixed(1), y: top.toFixed(1), width: bw.toFixed(1), height: (base - top).toFixed(1), fill: colour, "fill-opacity": 0.75 }));
+    }
+    for (const p of showCL ? day.controlledLoad : []) {
+      const top = y(p[key]);
+      svg.appendChild(el("rect", { x: x(p.slot).toFixed(1), y: top.toFixed(1), width: bw.toFixed(1), height: (base - top).toFixed(1), fill: "none", stroke: colour, "stroke-width": 1 }));
+    }
+    // Feed-in kWh: dotted outline hanging below zero.
+    for (const p of showFI ? day.feedIn : []) {
+      const bottom = y(-p[key]);
+      svg.appendChild(el("rect", { x: x(p.slot).toFixed(1), y: base.toFixed(1), width: bw.toFixed(1), height: (bottom - base).toFixed(1), fill: "none", stroke: colour, "stroke-width": 1, "stroke-dasharray": "2 2" }));
+    }
+  });
+  return svg;
+}
+
+// The last range result is kept so the channel toggle can redraw without refetching.
+let rangeState = null;
+let channelFilter = "all"; // "all" | "general" | "controlledLoad"
+let intervalMode = "5";    // "5" = raw 5-minute readings | "30" = 30-minute aggregates
+
+function renderRange(rows, start, end) {
+  rangeState = { days: groupRawByDay(rows), start, end };
+  redraw = drawRange;
+  drawRange();
+}
+
+function drawRange() {
+  const out = $("out");
+  out.innerHTML = "";
+  const { days, start, end } = rangeState;
+  if (days.length === 0) {
+    out.innerHTML = `<div class="msg">No usage data between ${start} and ${end}.</div>`;
+    return;
+  }
+  const rangeDays = Math.round((new Date(end) - new Date(start)) / 86400000) + 1;
+  const showGen = channelFilter === "all" || channelFilter === "general";
+  const showCL = channelFilter === "all" || channelFilter === "controlledLoad";
+  const showFI = channelFilter === "all" || channelFilter === "feedIn";
+  const is30 = intervalMode === "30";
+  const shown = is30 ? days.map(binDay) : days;
+  const bins = is30 ? 24 * 60 / 30 : DAY_SLOTS;
+
+  const info = document.createElement("div");
+  info.className = "note";
+  info.textContent = `Days with data: ${days.length} of ${rangeDays} (${days.map(d => d.date).join(", ")})`;
+  out.appendChild(info);
+
+  // Totals over every reading in the range, before any 30-minute binning or channel filter.
+  const totals = { general: 0, controlledLoad: 0, feedIn: 0 };
+  for (const day of days) {
+    for (const k of Object.keys(totals)) for (const p of day[k]) totals[k] += p.kwh;
+  }
+  const cards = document.createElement("div");
+  cards.className = "cards";
+  for (const [label, value] of [["General usage", totals.general], ["Controlled load", totals.controlledLoad], ["Feed-in", totals.feedIn]]) {
+    const c = document.createElement("div");
+    c.className = "card";
+    c.innerHTML = `<span>${label}</span><b>${value.toFixed(2)} kWh</b><span>${start} to ${end}</span>`;
+    cards.appendChild(c);
+  }
+  out.appendChild(cards);
+
+  const toggle = document.createElement("div");
+  toggle.className = "modes";
+  for (const [value, label] of [["all", "All"], ["general", "General"], ["controlledLoad", "Controlled load"], ["feedIn", "Feed-in"]]) {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.textContent = label;
+    b.classList.toggle("on", channelFilter === value);
+    b.addEventListener("click", () => { channelFilter = value; drawRange(); });
+    toggle.appendChild(b);
+  }
+  const row = document.createElement("div");
+  row.className = "toggles";
+  row.appendChild(toggle);
+  const interval = document.createElement("div");
+  interval.className = "modes";
+  for (const [value, label] of [["5", "5 min"], ["30", "30 min"]]) {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.textContent = label;
+    b.classList.toggle("on", intervalMode === value);
+    b.addEventListener("click", () => { intervalMode = value; drawRange(); });
+    interval.appendChild(b);
+  }
+  row.appendChild(interval);
+  out.appendChild(row);
+
+  const sectionTitle = (text) => {
+    const t = document.createElement("div");
+    t.className = "section";
+    t.textContent = text;
+    out.appendChild(t);
+  };
+
+  sectionTitle(is30 ? "Usage: 30-minute totals (kWh)" : "Usage: every 5-minute reading (kWh)");
+  out.appendChild(rawBarChart({ days: shown, bins, key: "kwh", height: fitHeight(0.55), decimals: 2, ariaLabel: "Usage bars by time of day", showGen, showCL, showFI }));
+
+  sectionTitle(is30 ? "Price: 30-minute average (c/kWh)" : "Price: every 5-minute reading (c/kWh)");
+  out.appendChild(rawBarChart({ days: shown, bins, key: "perKwh", height: fitHeight(0.4), decimals: 1, ariaLabel: "Price lines by time of day", showGen, showCL, showFI, kind: "line" }));
+
+  const legend = document.createElement("div");
+  legend.className = "legend";
+  let items = "";
+  if (showGen) items += '<span><i class="sw" style="background:var(--fg)"></i>General (filled bars, solid line)</span>';
+  if (showCL) items += '<span><i class="sw" style="background:none;border:2px solid var(--fg);box-sizing:border-box"></i>Controlled load (outlined bars, dashed line)</span>';
+  if (showFI) items += '<span><i class="sw" style="background:none;border:2px dotted var(--fg);box-sizing:border-box"></i>Feed-in (dotted: below zero in usage, dotted line in price)</span>';
+  legend.innerHTML = items + `<span>Day: ${days[0].date} <i class="ramp"></i> ${days[days.length - 1].date}</span>`;
+  out.appendChild(legend);
+}
+
+// ---------- Single-day view rendering ----------
+
+// The function that draws the view currently on screen, so a resize can redraw it.
+let redraw = null;
+
+function renderDay(rows, day) {
+  redraw = () => renderDay(rows, day);
+  const s = summarise(rows);
+  const out = $("out");
+  out.innerHTML = "";
+
+  const cards = document.createElement("div");
+  cards.className = "cards";
+  const card = (label, value, sub) => {
+    const c = document.createElement("div");
+    c.className = "card";
+    c.innerHTML = `<span>${label}</span><b>${value}</b><span>${sub}</span>`;
+    cards.appendChild(c);
+  };
+  // The API's cost field is in cents (kWh × perKwh), so convert to dollars. Feed-in cost is negative (a credit).
+  const dollars = (cents) => `${cents < 0 ? "-" : ""}$${Math.abs(cents / 100).toFixed(2)}`;
+  card("General usage", `${s.genKwh.toFixed(2)} kWh`, `${dollars(s.genCost)} · ${day}`);
+  card("Controlled load", `${s.clKwh.toFixed(2)} kWh`, `${dollars(s.clCost)} · ${day}`);
+  card("Feed-in", `${s.feedKwh.toFixed(2)} kWh`, `${dollars(s.feedCost)} · ${day}`);
+  card("Total cost", dollars(s.cost), "general + controlled load + feed-in");
+  card("Average general price", `${s.avgPrice.toFixed(1)}c`, "per kWh, simple mean");
+  out.appendChild(cards);
+
+  out.appendChild(chart(rows));
+
+  const legend = document.createElement("div");
+  legend.className = "legend";
+  legend.innerHTML =
+    '<span><i class="sw" style="background:var(--gen)"></i>General usage</span>' +
+    '<span><i class="sw" style="background:var(--cl)"></i>Controlled load</span>' +
+    '<span><i class="sw" style="background:var(--price)"></i>General price</span>' +
+    (rows.some(r => r.channelType === "feedIn") ? '<span><i class="sw" style="background:var(--feed)"></i>Feed-in (below zero in usage, dashed line in price)</span>' : "");
+  out.appendChild(legend);
+}
+
+// ---------- Loading and mode switching ----------
+
+function showError(msg) {
+  redraw = null;
+  const out = $("out");
+  out.innerHTML = "";
+  out.appendChild(Object.assign(document.createElement("div"), { className: "msg err", textContent: "Failed: " + msg }));
+}
+
+async function fetchJson(url) {
+  const res = await fetch(url);
+  const body = await res.json();
+  if (!res.ok) throw new Error(body.error || `HTTP ${res.status}`);
+  return body;
+}
+
+async function loadDay(day) {
+  const out = $("out"), btn = $("go1");
+  btn.disabled = true;
+  out.innerHTML = '<div class="msg">Loading…</div>';
+  try {
+    const rows = await fetchJson(`api/usage?site=${encodeURIComponent(SITE)}&date=${encodeURIComponent(day)}`);
+    if (!Array.isArray(rows) || rows.length === 0) {
+      out.innerHTML = '<div class="msg">No usage data for this date.</div>';
+      return;
+    }
+    renderDay(rows, day);
+  } catch (e) {
+    showError(e.message);
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+async function loadRange(start, end) {
+  const out = $("out"), btn = $("go2");
+  btn.disabled = true;
+  out.innerHTML = '<div class="msg">Loading…</div>';
+  try {
+    const rows = await fetchJson(`api/usage/range?site=${encodeURIComponent(SITE)}&start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}`);
+    renderRange(Array.isArray(rows) ? rows : [], start, end);
+  } catch (e) {
+    showError(e.message);
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+function setMode(mode) {
+  const single = mode === "single";
+  $("m1").classList.toggle("on", single);
+  $("m2").classList.toggle("on", !single);
+  $("f1").hidden = !single;
+  $("f2").hidden = single;
+}
+
+const SITE = "__SITE__";
+$("site").value = SITE;
+$("site").addEventListener("change", (e) => {
+  location.href = `${e.target.value}-usage.html${location.search}`;
+});
+
+$("m1").addEventListener("click", () => setMode("single"));
+$("m2").addEventListener("click", () => setMode("range"));
+
+$("f1").addEventListener("submit", (e) => {
+  e.preventDefault();
+  if ($("d").value) loadDay($("d").value);
+});
+
+$("f2").addEventListener("submit", (e) => {
+  e.preventDefault();
+  const start = $("s").value, end = $("e").value;
+  if (!start || !end) return;
+  if (end < start) return showError("the end date must be on or after the start date");
+  if ((new Date(end) - new Date(start)) / 86400000 + 1 > MAX_RANGE) return showError(`the range is limited to ${MAX_RANGE} days`);
+  loadRange(start, end);
+});
+
+// Redraw the current view after the window is resized (debounced, so dragging does not redraw on every pixel).
+let resizeTimer = null;
+window.addEventListener("resize", () => {
+  clearTimeout(resizeTimer);
+  resizeTimer = setTimeout(() => { if (redraw) redraw(); }, 120);
+});
+
+// Defaults: single day = yesterday (today's usage is incomplete); range = the 7 days to yesterday.
+// URL overrides: ?date=YYYY-MM-DD for a single day, or ?start=YYYY-MM-DD&end=YYYY-MM-DD for a range.
+(() => {
+  const y = new Date();
+  y.setDate(y.getDate() - 1);
+  const yesterday = iso(y);
+  const sDefault = new Date(y);
+  sDefault.setDate(sDefault.getDate() - 6);
+
+  const params = new URLSearchParams(location.search);
+  const isDate = (v) => /^\d{4}-\d{2}-\d{2}$/.test(v || "");
+  const date = params.get("date"), start = params.get("start"), end = params.get("end");
+
+  $("d").value = isDate(date) ? date : yesterday;
+  $("s").value = isDate(start) ? start : iso(sDefault);
+  $("e").value = isDate(end) ? end : yesterday;
+
+  if (isDate(start) && isDate(end)) {
+    setMode("range");
+    loadRange(start, end);
+  } else if (isDate(date)) {
+    loadDay(date);
+  }
+})();
+</script>
+</body></html>

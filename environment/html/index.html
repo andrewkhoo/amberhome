@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>mork.peer.net</title>
+<style>
+  :root { --bg: #f5f6f8; --text: #1d2330; --accent: #0f766e; --card: #ffffff; --border: #e3e6eb; }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) { --bg: #0f1216; --text: #e8ebf0; --accent: #2dd4bf; --card: #171b21; --border: #262c35; }
+  }
+  :root[data-theme="dark"] { --bg: #0f1216; --text: #e8ebf0; --accent: #2dd4bf; --card: #171b21; --border: #262c35; }
+  body { margin: 0; min-height: 100vh; background: var(--bg); color: var(--text);
+    font: 15px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif;
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 24px; padding: 16px; box-sizing: border-box; }
+  img { display: block; max-width: 100%; height: auto; border-radius: 12px; }
+  /* Add up to four links here as <a class="btn" href="/page.html" target="_blank" rel="noopener">Label</a>. */
+  .links { display: flex; flex-wrap: wrap; justify-content: center; gap: 12px; }
+  .btn { display: inline-block; min-width: 140px; padding: 10px 18px; border: 1px solid var(--border); border-radius: 8px;
+    background: var(--card); color: var(--accent); text-align: center; text-decoration: none; font-weight: 600; }
+  .btn:hover { border-color: var(--accent); }
+</style>
+</head>
+<body>
+<img src="/sydney-isometric.png" alt="Sydney isometric">
+<nav class="links" aria-label="Site links">
+  <a class="btn" href="/amber.html" target="_blank" rel="noopener">Forecast</a>
+  <a class="btn" href="/amberusage/" target="_blank" rel="noopener">Usage</a>
+  <a class="btn" href="/anker8t/s2000_dashboard.html" target="_blank" rel="noopener">8T dashboard</a>
+  <a class="btn" href="https://playfulcandy1449.grafana.net/d/anx5bq7/8t-anker" target="_blank" rel="noopener">8T telemetry</a>
+</nav>
+</body>
+</html>

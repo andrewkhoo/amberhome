@@ -1,0 +1,16 @@
+[Unit]
+Description=Amber usage pages
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=ubuntu
+WorkingDirectory=/home/ubuntu/amberhome/usage
+Environment=AMBER_HOST=127.0.0.1
+Environment=AMBER_PORT=8765
+ExecStart=/usr/bin/python3 /home/ubuntu/amberhome/usage/usage_server.py
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,161 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>S2000 Dashboard</title>
+<style>
+  :root {
+    --bg: #f5f6f8;
+    --card: #ffffff;
+    --text: #1d2330;
+    --muted: #6b7280;
+    --border: #e3e6eb;
+    --accent: #0f766e;
+    --bar: #e5e7eb;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #0f1216;
+      --card: #171b21;
+      --text: #e8ebf0;
+      --muted: #8a93a3;
+      --border: #262c35;
+      --accent: #2dd4bf;
+      --bar: #2a3039;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #0f1216;
+    --card: #171b21;
+    --text: #e8ebf0;
+    --muted: #8a93a3;
+    --border: #262c35;
+    --accent: #2dd4bf;
+    --bar: #2a3039;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    padding: 24px 16px;
+    background: var(--bg);
+    color: var(--text);
+    font: 15px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  header { max-width: 1100px; margin: 0 auto 20px; display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: baseline; justify-content: space-between; }
+  h1 { font-size: 20px; margin: 0; }
+  #status { color: var(--muted); font-size: 13px; }
+  section { max-width: 1100px; margin: 0 auto 28px; }
+  h2 { font-size: 14px; font-weight: 600; color: var(--muted); margin: 0 0 10px; word-break: break-all; }
+  .grid { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); }
+  .stat {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 16px 18px;
+  }
+  .label { color: var(--muted); font-size: 13px; }
+  .value { font-size: 36px; font-weight: 650; margin: 6px 0 2px; font-variant-numeric: tabular-nums; }
+  .unit { font-size: 16px; font-weight: 500; color: var(--muted); margin-left: 4px; }
+  .bar { height: 6px; background: var(--bar); border-radius: 3px; overflow: hidden; margin-top: 10px; }
+  .bar > div { height: 100%; background: var(--accent); width: 0; transition: width 0.4s; }
+  .key { font-size: 11px; color: var(--muted); margin-top: 8px; font-family: ui-monospace, Menlo, monospace; }
+  .empty { color: var(--muted); }
+  .lights { margin-top: 12px; }
+  .indicator { display: flex; gap: 12px; align-items: center; }
+  .dot { width: 18px; height: 18px; border-radius: 50%; flex: none; background: var(--bar); box-shadow: 0 0 0 3px var(--border) inset; }
+  .dot.on { background: #22c55e; box-shadow: 0 0 10px #22c55e88; }
+  .dot.off { background: #ef4444; box-shadow: 0 0 10px #ef444488; }
+  .state { font-size: 20px; font-weight: 600; margin-top: 2px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>SOLIX S2000</h1>
+  <div id="status">Loading…</div>
+</header>
+<main id="devices"></main>
+
+<script>
+  // Stat panels: [key in s2000_mqtt_latest.json, label, unit, is percentage]
+  const PANELS = [
+    ["battery_soc", "Battery SOC", "%", true],
+    ["ac_input_power_total", "AC input power", "W", false],
+    ["dc_input_power_total", "DC input power", "W", false],
+    ["ac_output_power", "AC output power", "W", false],
+  ];
+  // Indicators: [key, label]. Value 1 shows green (on), 0 shows red (off).
+  // The meaning of 0/1 is assumed, not confirmed from device docs.
+  const INDICATORS = [
+    ["ac_input_status", "AC input status"],
+    ["ac_input_plug_status", "AC input plug"],
+    ["ac_output_power_switch", "AC output switch"],
+  ];
+  // Display names keyed by serial number. Serials not listed show the serial itself.
+  const LABELS = {
+    "APCE33R1G35100385": "8T-inside",
+    "APCE33R1G35100588": "8T-garage",
+  };
+  const SOURCE = "s2000_mqtt_latest.json";
+  const REFRESH_MS = 60000;
+
+  const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
+
+  function render(data) {
+    const devices = data.devices || {};
+    const root = document.getElementById("devices");
+    const sns = Object.keys(devices);
+    if (!sns.length) {
+      root.innerHTML = '<p class="empty">No S2000 data in ' + SOURCE + '.</p>';
+      return;
+    }
+    root.innerHTML = sns.map((sn) => {
+      const dev = devices[sn];
+      const cards = PANELS.map(([key, label, unit, pct]) => {
+        const raw = dev[key];
+        const has = raw !== undefined && raw !== null;
+        const shown = has ? (typeof raw === "number" ? Number(raw.toFixed(1)) : raw) : "–";
+        const bar = pct && has ? '<div class="bar"><div style="width:' + Math.max(0, Math.min(100, Number(raw))) + '%"></div></div>' : "";
+        return '<div class="stat">' +
+          '<div class="label">' + esc(label) + '</div>' +
+          '<div class="value">' + esc(shown) + (has ? '<span class="unit">' + esc(unit) + '</span>' : "") + '</div>' +
+          bar +
+          '<div class="key">' + esc(key) + '</div>' +
+          '</div>';
+      }).join("");
+      const lights = INDICATORS.map(([key, label]) => {
+        const raw = dev[key];
+        const known = raw !== undefined && raw !== null;
+        const on = Number(raw) === 1;
+        const state = !known ? "unknown" : on ? "on" : "off";
+        const text = !known ? "–" : on ? "On" : "Off";
+        return '<div class="stat indicator">' +
+          '<span class="dot ' + state + '" aria-hidden="true"></span>' +
+          '<div><div class="label">' + esc(label) + '</div>' +
+          '<div class="state">' + text + '</div>' +
+          '<div class="key">' + esc(key) + '</div></div>' +
+          '</div>';
+      }).join("");
+      return '<section><h2>' + esc(LABELS[sn] || dev.device_sn || sn) + '</h2><div class="grid">' + cards + '</div>' +
+        '<div class="grid lights">' + lights + '</div></section>';
+    }).join("");
+  }
+
+  async function load() {
+    const status = document.getElementById("status");
+    try {
+      const res = await fetch(SOURCE + "?t=" + Date.now(), { cache: "no-store" });
+      if (!res.ok) throw new Error("HTTP " + res.status);
+      const data = await res.json();
+      render(data);
+      status.textContent = "Snapshot " + (data.updated ? new Date(data.updated).toLocaleString() : "unknown time") + " · refreshes every 60 s";
+    } catch (err) {
+      status.textContent = "Could not load " + SOURCE + " (" + err.message + "). Serve this folder over HTTP, e.g. python3 -m http.server in s2000/.";
+    }
+  }
+
+  load();
+  setInterval(load, REFRESH_MS);
+</script>
+</body>
+</html>
