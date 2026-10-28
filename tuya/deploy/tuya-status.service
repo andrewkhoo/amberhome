@@ -1,0 +1,14 @@
+[Unit]
+Description=Tuya device status server for the web page
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=ubuntu
+WorkingDirectory=/home/ubuntu/tuya
+Environment=TUYA_ENV=/etc/tuya.env
+ExecStart=/home/ubuntu/tuya/.venv/bin/python -W ignore /home/ubuntu/tuya/status_server.py
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target

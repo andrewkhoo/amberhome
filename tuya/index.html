@@ -1,0 +1,273 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tuya Devices</title>
+<style>
+* {
+  border: 0;
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+:root {
+  --hue: 223;
+  --bg: hsl(var(--hue),10%,10%);
+  --fg: hsl(var(--hue),10%,90%);
+  --primary: hsl(var(--hue),90%,70%);
+  --line: hsl(var(--hue),10%,25%);
+  --muted: hsl(var(--hue),6%,65%);
+  color-scheme: dark;
+  --trans-dur: 0.3s;
+  --trans-timing: cubic-bezier(0.76,0.05,0.24,0.95);
+  --trans-timing-in: cubic-bezier(0.76,0.05,0.86,0.06);
+  --trans-timing-out: cubic-bezier(0.05,0.76,0.06,0.86);
+}
+body,
+input {
+  color: var(--fg);
+  font: 1.25em/1.5 sans-serif;
+}
+body {
+  background-color: var(--bg);
+}
+main {
+  max-width: 640px;
+  margin: 0 auto;
+  padding: 32px max(16px, env(safe-area-inset-left, 0px)) 32px max(16px, env(safe-area-inset-right, 0px));
+}
+h1 { font-size: 2.75rem; margin: 0 0 4px; }
+.updated { color: var(--muted); font-size: 1.1rem; margin: 0 0 24px; }
+.devices { list-style: none; }
+.device {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px 0;
+  border-bottom: 1px solid var(--line);
+}
+.device__name { font-size: 1.75rem; font-weight: 600; min-width: 0; overflow-wrap: anywhere; }
+.device__state { color: var(--muted); font-size: 1.5rem; margin-left: auto; padding-right: 12px; }
+.device__state--on { color: var(--primary); font-weight: 600; }
+
+.device .switch {
+  display: inline-block;
+  margin: 0;
+  font-size: 40px;
+  cursor: pointer;
+}
+.device .switch__input:disabled {
+  cursor: progress;
+  opacity: 0.6;
+}
+/* The input's own font size sets its em units, so it must match the label the icons are sized from. */
+.device .switch__input {
+  font: inherit;
+}
+
+.switch {
+  margin: auto;
+  position: relative;
+}
+.switch__icon,
+.switch__input {
+  display: block;
+}
+.switch__icon {
+  position: absolute;
+  top: 0.375em;
+  right: 0.375em;
+  width: 0.75em;
+  height: 0.75em;
+  transition:
+    opacity calc(var(--trans-dur) / 2),
+    transform calc(var(--trans-dur) / 2);
+}
+.switch__icon polyline {
+  transition: stroke-dashoffset calc(var(--trans-dur) / 2);
+}
+.switch__icon--light,
+.switch__icon--light polyline {
+  transition-delay: calc(var(--trans-dur) / 2);
+  transition-timing-function: var(--trans-timing-out);
+}
+.switch__icon--dark {
+  opacity: 0;
+  transform: translateX(-0.75em) rotate(30deg) scale(0.75);
+  transition-timing-function: var(--trans-timing-in);
+}
+.switch__input {
+  background-color: hsl(210,90%,70%);
+  border-radius: 0.75em;
+  box-shadow:
+    0 0 0 0.125em hsla(var(--hue),90%,50%,0),
+    0.125em 0.125em 0.25em hsla(var(--hue),90%,10%,0.2);
+  outline: transparent;
+  position: relative;
+  width: 3em;
+  height: 1.5em;
+  -webkit-appearance: none;
+  appearance: none;
+  -webkit-tap-highlight-color: transparent;
+  transition:
+    background-color var(--trans-dur) var(--trans-timing),
+    box-shadow 0.15s linear;
+}
+.switch__input:focus-visible {
+  box-shadow:
+    0 0 0 0.125em hsl(var(--hue),90%,50%),
+    0.125em 0.125em 0.25em hsla(var(--hue),90%,10%,0.2);
+}
+.switch__input:before,
+.switch__input:after {
+  content: "";
+  display: block;
+  position: absolute;
+}
+.switch__input:before {
+  background-color: hsl(50,90%,50%);
+  border-radius: inherit;
+  mask-image: linear-gradient(120deg,hsl(0,0%,0%) 20%,hsla(0,0%,0%,0) 80%);
+  -webkit-mask-image: linear-gradient(120deg,hsl(0,0%,0%) 20%,hsla(0,0%,0%,0) 80%);
+  inset: 0;
+  transition: background-color var(--trans-dur) var(--trans-timing);
+}
+.switch__input:after {
+  background-color: hsl(0,0%,100%);
+  border-radius: 50%;
+  box-shadow: 0.05em 0.05em 0.05em hsla(var(--hue),90%,10%,0.1);
+  top: 0.125em;
+  left: 0.125em;
+  width: 1.25em;
+  height: 1.25em;
+  transition:
+    background-color var(--trans-dur) var(--trans-timing),
+    transform var(--trans-dur) var(--trans-timing);
+  z-index: 1;
+}
+.switch__input:checked {
+  background-color: hsl(290,90%,40%);
+}
+.switch__input:checked:before {
+  background-color: hsl(220,90%,40%);
+}
+.switch__input:checked:after {
+  background-color: hsl(0,0%,0%);
+  transform: translateX(1.5em);
+}
+.switch__input:checked ~ .switch__icon--light,
+.switch__input:checked ~ .switch__icon--light polyline {
+  transition-delay: 0s;
+  transition-timing-function: var(--trans-timing-in);
+}
+.switch__input:checked ~ .switch__icon--light {
+  opacity: 0;
+  transform: translateX(-0.75em) rotate(-30deg) scale(0.75);
+}
+.switch__input:checked ~ .switch__icon--light polyline {
+  stroke-dashoffset: 1.5;
+}
+.switch__input:checked ~ .switch__icon--dark {
+  opacity: 1;
+  transform: translateX(-1.5em);
+  transition-delay: calc(var(--trans-dur) / 2);
+  transition-timing-function: var(--trans-timing-out);
+}
+.switch__sr {
+  overflow: hidden;
+  position: absolute;
+  width: 1px;
+  height: 1px;
+}
+</style>
+</head>
+<body>
+<main>
+  <h1>Tuya Devices</h1>
+  <p class="updated" id="updated">Loading…</p>
+  <ul class="devices" id="devices"></ul>
+</main>
+<script>
+(function () {
+  var list = document.getElementById('devices');
+  var updated = document.getElementById('updated');
+
+  // Checked is the dark (moon) state, so a device that is on is unchecked: bright sun, knob left.
+  function switchMarkup(on, name) {
+    return '<label class="switch">' +
+      '<input class="switch__input" type="checkbox" role="switch"' + (on ? '' : ' checked') + '>' +
+      '<svg class="switch__icon switch__icon--light" viewBox="0 0 12 12" width="12px" height="12px" aria-hidden="true">' +
+        '<g fill="none" stroke="#fff" stroke-width="1" stroke-linecap="round">' +
+          '<circle cx="6" cy="6" r="2" />' +
+          '<g stroke-dasharray="1.5 1.5">' +
+            [0, 45, 90, 135, 180, 225, 270, 315].map(function (deg) {
+              return '<polyline points="6 10,6 11.5" transform="rotate(' + deg + ',6,6)" />';
+            }).join('') +
+          '</g>' +
+        '</g>' +
+      '</svg>' +
+      '<svg class="switch__icon switch__icon--dark" viewBox="0 0 12 12" width="12px" height="12px" aria-hidden="true">' +
+        '<g fill="none" stroke="#fff" stroke-width="1" stroke-linejoin="round" transform="rotate(-45,6,6)">' +
+          '<path d="m9,10c-2.209,0-4-1.791-4-4s1.791-4,4-4c.304,0,.598.041.883.105-.995-.992-2.367-1.605-3.883-1.605C2.962.5.5,2.962.5,6s2.462,5.5,5.5,5.5c1.516,0,2.888-.613,3.883-1.605-.285.064-.578.105-.883.105Z"/>' +
+        '</g>' +
+      '</svg>' +
+      '<span class="switch__sr">' + name + ' is ' + (on ? 'on' : 'off') + '</span>' +
+    '</label>';
+  }
+
+  function getJson(url, options) {
+    return fetch(url, options).then(function (response) {
+      return response.json().then(function (body) {
+        if (!response.ok) throw new Error(body.error || body.output || response.statusText);
+        return body;
+      });
+    });
+  }
+
+  function render(data) {
+    list.textContent = '';
+    updated.textContent = 'Updated ' + new Date(data.updated).toLocaleString();
+    data.devices.forEach(function (device) {
+      var on = device.switch_1 === true;
+      var item = document.createElement('li');
+      item.className = 'device';
+      item.innerHTML =
+        '<span class="device__name"></span>' +
+        '<span class="device__state ' + (on ? 'device__state--on' : '') + '">' + (on ? 'On' : 'Off') + '</span>' +
+        switchMarkup(on, device.name);
+      item.querySelector('.device__name').textContent = device.name;
+      item.querySelector('.switch__input').addEventListener('change', function (event) {
+        setSwitch(device.name, event.target);
+      });
+      list.appendChild(item);
+    });
+  }
+
+  function load() {
+    return getJson('api/status', { cache: 'no-store' }).then(render).catch(function (error) {
+      updated.textContent = 'Could not load device status: ' + error.message;
+    });
+  }
+
+  // Send the new state, then reload the state from the cloud so the switch shows what the device reports.
+  function setSwitch(name, input) {
+    var action = input.checked ? 'off' : 'on';
+    var failure = null;
+    input.disabled = true;
+    getJson('api/' + encodeURIComponent(name) + '/' + action, { method: 'POST' })
+      .catch(function (error) {
+        failure = error.message;
+      })
+      .then(load)
+      .then(function () {
+        if (failure) updated.textContent = 'Could not switch ' + name + ': ' + failure;
+      });
+  }
+
+  load();
+})();
+</script>
+</body>
+</html>

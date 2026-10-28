@@ -34,3 +34,8 @@ go.work.sum
 
 # environment file with secrets
 *.env
+devices.json
+tinytuya.json
+snapshot.json
+tuya/.venv/
+

@@ -3,7 +3,7 @@
 #
 # Run this ON mindy, from the directory that holds the project files:
 #
-#     scp mqtt_s2000.py install_s2000.sh nginx-s2000.conf s2000_dashboard.html ubuntu@mindy.peer.net:~/s2000/
+#     scp mqtt_s2000.py grafana_push_s2000.py install_s2000.sh nginx-s2000.conf s2000_dashboard.html ubuntu@mindy.peer.net:~/s2000/
 #     ssh ubuntu@mindy.peer.net 'cd ~/s2000 && bash install_s2000.sh'
 #
 # Prerequisites: /etc/anker.env holds ANKERUSER, ANKERPASSWORD and ANKERCOUNTRY
@@ -16,6 +16,8 @@ APP_DIR="$HOME/s2000"
 VENV="$APP_DIR/.venv"
 UNIT="/etc/systemd/system/s2000-mqtt.service"
 ENV_FILE="/etc/anker.env"
+GRAFANA_UNIT="/etc/systemd/system/s2000-grafana.service"
+GRAFANA_ENV_FILE="/etc/grafana.env"
 WEB_DIR="/var/www/s2000"
 NGINX_SITE="/etc/nginx/sites-available/default"
 NGINX_SNIPPET="$APP_DIR/deploy/nginx-s2000.conf"
@@ -82,6 +84,39 @@ EOF
 sudo systemctl daemon-reload
 sudo systemctl enable s2000-mqtt.service
 sudo systemctl restart s2000-mqtt.service
+
+# 5b. Grafana Cloud pusher: sends each new snapshot to Grafana Cloud. Needs /etc/grafana.env,
+#     which must be readable by ubuntu (640, root:ubuntu).
+if [ -r "$GRAFANA_ENV_FILE" ]; then
+    if [ "$SRC_DIR" != "$APP_DIR" ]; then
+        cp "$SRC_DIR/grafana_push_s2000.py" "$APP_DIR/grafana_push_s2000.py"
+    fi
+    sudo tee "$GRAFANA_UNIT" >/dev/null <<EOF
+[Unit]
+Description=Push SOLIX S2000 snapshot to Grafana Cloud
+After=network-online.target s2000-mqtt.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ubuntu
+Group=ubuntu
+WorkingDirectory=$APP_DIR
+EnvironmentFile=$GRAFANA_ENV_FILE
+Environment=S2000_SNAPSHOT=$WEB_DIR/s2000_mqtt_latest.json
+ExecStart=/usr/bin/python3 grafana_push_s2000.py --interval 60
+Restart=on-failure
+RestartSec=60
+
+[Install]
+WantedBy=multi-user.target
+EOF
+    sudo systemctl daemon-reload
+    sudo systemctl enable s2000-grafana.service
+    sudo systemctl restart s2000-grafana.service
+else
+    echo "Skipping Grafana pusher: cannot read $GRAFANA_ENV_FILE (expected root:ubuntu 640)." >&2
+fi
 
 # 6. nginx: serve the dashboard at /s2000/ and point the landing page button at it.
 #    Both steps are skipped if already done, so the script can be re-run.
