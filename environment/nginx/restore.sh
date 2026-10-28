@@ -41,9 +41,14 @@ install_snippet() {
 }
 install_snippet "$SRC_DIR/app-snippets/usage/nginx-snippet.conf" /home/$APP_USER/amberhome/usage/deploy/nginx-snippet.conf
 install_snippet "$SRC_DIR/app-snippets/s2000/nginx-s2000.conf" /home/$APP_USER/s2000/deploy/nginx-s2000.conf
+install_snippet "$SRC_DIR/app-snippets/amber-push/nginx-amber-push.conf" /home/$APP_USER/amber-push/deploy/nginx-amber-push.conf
+install_snippet "$SRC_DIR/app-snippets/tuya/nginx-tuya.conf" /home/$APP_USER/tuya/deploy/nginx-tuya.conf
 
 # The S2000 dashboard is served from here; mqtt_s2000.py writes into it.
 install -d -o "$APP_USER" -g "$APP_USER" /var/www/s2000
+# The Amber Forecast page is written by build_page.py; the Tuya page is served as www-data.
+install -d -o "$APP_USER" -g "$APP_USER" /var/www/amber-push
+install -d -o www-data -g www-data /var/www/tuya
 
 # Copy the nginx configuration, preserving symlinks and permissions.
 # Excludes this script and the app snippets, which are not part of /etc/nginx.

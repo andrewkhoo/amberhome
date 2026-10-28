@@ -47,6 +47,8 @@ server {
 
 	include /home/ubuntu/amberhome/usage/deploy/nginx-snippet.conf;
 	include /home/ubuntu/s2000/deploy/nginx-s2000.conf;
+	include /home/ubuntu/amber-push/deploy/nginx-amber-push.conf;
+	include /home/ubuntu/tuya/deploy/nginx-tuya.conf;
 
 	location / {
 		# First attempt to serve request as file, then
